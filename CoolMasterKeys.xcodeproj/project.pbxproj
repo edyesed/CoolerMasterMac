@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		A19B9A38236E4A9C001CEF7F /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = A19B9A37236E4A9C001CEF7F /* main.m */; };
+		A19B9A40236E4AB4001CEF7F /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A19B9A3F236E4AB4001CEF7F /* IOKit.framework */; };
+		A19B9A42236E6C71001CEF7F /* utils.m in Sources */ = {isa = PBXBuildFile; fileRef = A19B9A41236E6C71001CEF7F /* utils.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -25,6 +27,8 @@
 /* Begin PBXFileReference section */
 		A19B9A34236E4A9C001CEF7F /* CoolMasterKeys */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = CoolMasterKeys; sourceTree = BUILT_PRODUCTS_DIR; };
 		A19B9A37236E4A9C001CEF7F /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		A19B9A3F236E4AB4001CEF7F /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		A19B9A41236E6C71001CEF7F /* utils.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = utils.m; path = CoolerMasterKeys/utils.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,6 +36,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A19B9A40236E4AB4001CEF7F /* IOKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -43,6 +48,7 @@
 			children = (
 				A19B9A36236E4A9C001CEF7F /* CoolMasterKeys */,
 				A19B9A35236E4A9C001CEF7F /* Products */,
+				A19B9A3E236E4AB4001CEF7F /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -58,8 +64,17 @@
 			isa = PBXGroup;
 			children = (
 				A19B9A37236E4A9C001CEF7F /* main.m */,
+				A19B9A41236E6C71001CEF7F /* utils.m */,
 			);
 			path = CoolMasterKeys;
+			sourceTree = "<group>";
+		};
+		A19B9A3E236E4AB4001CEF7F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A19B9A3F236E4AB4001CEF7F /* IOKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -88,6 +103,7 @@
 		A19B9A2C236E4A9C001CEF7F /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				CLASSPREFIX = CoolerMasterKeys;
 				LastUpgradeCheck = 1120;
 				ORGANIZATIONNAME = "Ed Anderson";
 				TargetAttributes = {
@@ -120,6 +136,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A19B9A38236E4A9C001CEF7F /* main.m in Sources */,
+				A19B9A42236E6C71001CEF7F /* utils.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
