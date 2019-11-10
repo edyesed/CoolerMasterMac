@@ -14,8 +14,8 @@
                           //synchronous calls for reads and writes
 #define kTestMessage        "CoolerMaster Test"
 //#define k8051_USBCS         0x7f92
-#define kOurVendorID        9494    //Vendor ID for coolermaster
-//#define kOurProductID           8193    //Product ID of device BEFORE it
+#define kOurVendorID        0x2516 //9494    //Vendor ID for coolermaster
+#define kOurProductID           159    //Product ID of device BEFORE it
                                         //is programmed (raw device)
 //#define kOurProductIDBulkTest   4098    //Product ID of device AFTER it is
                                         //programmed (bulk test device)
@@ -321,45 +321,54 @@ void RawDeviceRemoved(void *refCon, io_iterator_t iterator)
     }
 }
 
-IOReturn WriteToDevice(IOUSBDeviceInterface **dev,
-                        UInt16 length, UInt8 writeBuffer[])
+//IOReturn WriteToDevice(IOUSBDeviceInterface **dev,
+//                        UInt16 length, UInt8 *writeBuffer)
+IOReturn WriteToDevice(IOUSBDeviceInterface **dev)
 {
     IOUSBDevRequest     request;
+    //UInt8           requestData;
  
+    UInt8 requestData[64] = { 0x51, 0x28, 0x00, 0x00, 0x04 };
     request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBVendor,
                                                 kUSBDevice);
-    request.bRequest = 0xa0;
-    //request.wValue = deviceAddress;
+    request.bRequest = 01; // 51 sets effects https://github.com/chmod222/libcmmk/blob/master/PROTOCOL.md#5x-28-get-or-set-active-effect
+    request.wValue = 0x04; // 3 is the writer interface for keyboard
     request.wIndex = 0;
-    request.wLength = length;
-    request.pData = writeBuffer;
+    request.wLength = sizeof(requestData);
+    request.pData = &requestData;
  
     return (*dev)->DeviceRequest(dev, &request);
 }
 
-IOReturn DownloadToDevice(IOUSBDeviceInterface **dev)
+// DownloadToDevice seems unnecessary for the keyboard use case.
+//
+IOReturn PipeToDevice(IOUSBDeviceInterface **dev)
 {
-    UInt8       writeVal;
+    //ok UInt8       writeVal [64];
     IOReturn    kr;
- 
+
     //Assert reset. This tells the device that the download is
     //about to occur
-    writeVal = 1;   //For this device, a value of 1 indicates a download
-    kr = WriteToDevice(dev, 1, &writeVal);
+    //writeVal = 1;   //For this device, a value of 1 indicates a download
+    //ok writeVal[0] = 51;
+    //ok writeVal[1] = 28;
+    //ok writeVal[2] = 0x09;
+    //kr = WriteToDevice(dev, 64, &writeVal);
+    kr = WriteToDevice(dev);
     if (kr != kIOReturnSuccess)
     {
-        printf("WriteToDevice reset returned err 0x%x\n", kr);
+        printf("WriteToDevice returned err 0x%x\n", kr);
         (*dev)->USBDeviceClose(dev);
         (*dev)->Release(dev);
         return kr;
     }
- 
+
     //De-assert reset. This tells the device that the download is complete
-    writeVal = 0;
-    kr = WriteToDevice(dev, 1, &writeVal);
-    if (kr != kIOReturnSuccess)
-        printf("WriteToDevice run returned err 0x%x\n", kr);
- 
+    //writeVal = 0;
+    //kr = WriteToDevice(dev, 1, &writeVal);
+    //if (kr != kIOReturnSuccess)
+    //    printf("WriteToDevice run returned err 0x%x\n", kr);
+
     return kr;
 }
  
@@ -376,11 +385,12 @@ IOReturn ConfigureDevice(IOUSBDeviceInterface **dev)
     if (!numConfig)
         return -1;
  
+    UInt8 index = 0x83;
     //Get the configuration descriptor for index 0
-    kr = (*dev)->GetConfigurationDescriptorPtr(dev, 0, &configDesc);
+    kr = (*dev)->GetConfigurationDescriptorPtr(dev, index, &configDesc);
     if (kr)
     {
-        printf("Couldn’t get configuration descriptor for index %d (err=%08x)\n", 0, kr);
+        printf("Couldn’t get configuration descriptor for index %d (err=%08x)\n", index, kr);
         return -1;
     }
  
@@ -442,7 +452,8 @@ void RawDeviceAdded(void *refCon, io_iterator_t iterator)
         kr = (*dev)->GetDeviceVendor(dev, &vendor);
         kr = (*dev)->GetDeviceProduct(dev, &product);
         kr = (*dev)->GetDeviceReleaseNumber(dev, &release);
-        if ((vendor != kOurVendorID) || (release != 1))
+        //if ((vendor != kOurVendorID) || (release != 1))
+        if ((vendor != kOurVendorID) || (release != 16))
         {
             printf("Found unwanted device (vendor = %d, product = %d)\n",
                     vendor, product);
@@ -468,15 +479,17 @@ void RawDeviceAdded(void *refCon, io_iterator_t iterator)
             continue;
         }
  
-        //Download firmware to device
-        kr = DownloadToDevice(dev);
+// DownloadToDevice seems unnecessary for the keyboard use case
+        //pipe some commands firmware to device
+        kr = PipeToDevice(dev);
         if (kr != kIOReturnSuccess)
         {
-            printf("Unable to download firmware to device: %08x\n", kr);
+            printf("Unable to pipe commands to device: %08x\n", kr);
             (void) (*dev)->USBDeviceClose(dev);
             (void) (*dev)->Release(dev);
             continue;
         }
+        
  
         //Close this device and release object
         kr = (*dev)->USBDeviceClose(dev);
@@ -485,87 +498,116 @@ void RawDeviceAdded(void *refCon, io_iterator_t iterator)
 }
 
 
-int main(int argc, const char * argv[]) {
-    mach_port_t             masterPort;
-    CFMutableDictionaryRef  matchingDict;
-    CFRunLoopSourceRef      runLoopSource;
-    kern_return_t           kr;
-    SInt32                  usbVendor = kOurVendorID;
-    
-    
-    // Get command line arguments, if any
-    if (argc > 1)
-        usbVendor = atoi(argv[1]);
-    //Create a master port for communication with the I/O Kit
-    kr = IOMasterPort(MACH_PORT_NULL, &masterPort);
-    if (kr || !masterPort)
-    {
-        printf("ERR: Couldn’t create a master I/O Kit port(%08x)\n", kr);
-        return -1;
-    }
-    //Set up matching dictionary for class IOUSBDevice and its subclasses
-    matchingDict = IOServiceMatching(kIOUSBDeviceClassName);
-    if (!matchingDict)
-    {
-        printf("Couldn’t create a USB matching dictionary\n");
-        mach_port_deallocate(mach_task_self(), masterPort);
-        return -1;
-    }
-    //Add the vendor and product IDs to the matching dictionary.
-    //This is the second key in the table of device-matching keys of the
-    //USB Common Class Specification
-    CFDictionarySetValue(matchingDict, CFSTR(kUSBVendorName),
-                        CFNumberCreate(kCFAllocatorDefault,
-                                     kCFNumberSInt32Type, &usbVendor));
-    //CFDictionarySetValue(matchingDict, CFSTR(kUSBProductName),
-    //                    CFNumberCreate(kCFAllocatorDefault,
-    //                                kCFNumberSInt32Type, &usbProduct));
-    //To set up asynchronous notifications, create a notification port and
-    //add its run loop event source to the program’s run loop
-    gNotifyPort = IONotificationPortCreate(masterPort);
-    runLoopSource = IONotificationPortGetRunLoopSource(gNotifyPort);
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource,
-                        kCFRunLoopDefaultMode);
-    
-    //Retain additional dictionary references because each call to
-    //IOServiceAddMatchingNotification consumes one reference
-    matchingDict = (CFMutableDictionaryRef) CFRetain(matchingDict);
-    matchingDict = (CFMutableDictionaryRef) CFRetain(matchingDict);
-    matchingDict = (CFMutableDictionaryRef) CFRetain(matchingDict);
-    
-    //Now set up two notifications: one to be called when a raw device
-    //is first matched by the I/O Kit and another to be called when the
-    //device is terminated
-    //Notification of first match:
-    kr = IOServiceAddMatchingNotification(gNotifyPort,
-                    kIOFirstMatchNotification, matchingDict,
-                    RawDeviceAdded, NULL, &gRawAddedIter);
-    
-    //Iterate over set of matching devices to access already-present devices
-    //and to arm the notification
-    RawDeviceAdded(NULL, gRawAddedIter);
-    
-    //Now set up two notifications: one to be called when a bulk test device
-    //is first matched by the I/O Kit and another to be called when the
-    //device is terminated.
-    //Notification of first match
-    kr = IOServiceAddMatchingNotification(gNotifyPort,
-                    kIOFirstMatchNotification, matchingDict,
-                    BulkTestDeviceAdded, NULL, &gBulkTestAddedIter);
-    //Iterate over set of matching devices to access already-present devices
-    //and to arm the notification
-    BulkTestDeviceAdded(NULL, gBulkTestAddedIter);
+int main (int argc, const char *argv[])
+{
+                mach_port_t             masterPort;
+                CFMutableDictionaryRef  matchingDict;
+                CFRunLoopSourceRef      runLoopSource;
+                kern_return_t           kr;
+                SInt32                  usbVendor = kOurVendorID;
+                SInt32                  usbProduct = kOurProductID;
                 
+                // Get command line arguments, if any
+                if (argc > 1)
+                    usbVendor = atoi(argv[1]);
+                if (argc > 2)
+                    usbProduct = atoi(argv[2]);
                 
-    //Notification of termination:
-    kr = IOServiceAddMatchingNotification(gNotifyPort,
-                    kIOTerminatedNotification, matchingDict,
-                    RawDeviceRemoved, NULL, &gRawRemovedIter);
-    //Iterate over set of matching devices to release each one and to
-    //arm the notification
-    RawDeviceRemoved(NULL, gRawRemovedIter);
-    
-    return 0;
-}
-
+                //Create a master port for communication with the I/O Kit
+                kr = IOMasterPort(MACH_PORT_NULL, &masterPort);
+                if (kr || !masterPort)
+                {
+                    printf("ERR: Couldn’t create a master I/O Kit port(%08x)\n", kr);
+                    return -1;
+                }
+                //Set up matching dictionary for class IOUSBDevice and its subclasses
+                matchingDict = IOServiceMatching(kIOUSBDeviceClassName);
+                if (!matchingDict)
+                {
+                    printf("Couldn’t create a USB matching dictionary\n");
+                    mach_port_deallocate(mach_task_self(), masterPort);
+                    return -1;
+                }
+                
+                //Add the vendor and product IDs to the matching dictionary.
+                //This is the second key in the table of device-matching keys of the
+                //USB Common Class Specification
+                CFDictionarySetValue(matchingDict, CFSTR(kUSBVendorName),
+                                     CFNumberCreate(kCFAllocatorDefault,
+                                                    kCFNumberSInt32Type, &usbVendor));
+                CFDictionarySetValue(matchingDict, CFSTR(kUSBProductName),
+                                     CFNumberCreate(kCFAllocatorDefault,
+                                                    kCFNumberSInt32Type, &usbProduct));
+                
+                //To set up asynchronous notifications, create a notification port and
+                //add its run loop event source to the program’s run loop
+                gNotifyPort = IONotificationPortCreate(masterPort);
+                runLoopSource = IONotificationPortGetRunLoopSource(gNotifyPort);
+                CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource,
+                                   kCFRunLoopDefaultMode);
+                
+                //Retain additional dictionary references because each call to
+                //IOServiceAddMatchingNotification consumes one reference
+                matchingDict = (CFMutableDictionaryRef) CFRetain(matchingDict);
+                matchingDict = (CFMutableDictionaryRef) CFRetain(matchingDict);
+                matchingDict = (CFMutableDictionaryRef) CFRetain(matchingDict);
+                
+                //Now set up two notifications: one to be called when a raw device
+                //is first matched by the I/O Kit and another to be called when the
+                //device is terminated
+                //Notification of first match:
+                kr = IOServiceAddMatchingNotification(gNotifyPort,
+                                                      kIOFirstMatchNotification, matchingDict,
+                                                      RawDeviceAdded, NULL, &gRawAddedIter);
+                //Iterate over set of matching devices to access already-present devices
+                //and to arm the notification
+                RawDeviceAdded(NULL, gRawAddedIter);
+                
+                //Notification of termination:
+                kr = IOServiceAddMatchingNotification(gNotifyPort,
+                                                      kIOTerminatedNotification, matchingDict,
+                                                      RawDeviceRemoved, NULL, &gRawRemovedIter);
+                //Iterate over set of matching devices to release each one and to
+                //arm the notification
+                RawDeviceRemoved(NULL, gRawRemovedIter);
+                
+//                //Now change the USB product ID in the matching dictionary to match
+//                //the one the device will have after the firmware has been downloaded
+//                usbProduct = kOurProductIDBulkTest;
+//                CFDictionarySetValue(matchingDict, CFSTR(kUSBProductName),
+//                                     CFNumberCreate(kCFAllocatorDefault,
+//                                                    kCFNumberSInt32Type, &usbProduct));
+//
+//                //Now set up two notifications: one to be called when a bulk test device
+//                //is first matched by the I/O Kit and another to be called when the
+//                //device is terminated.
+//                //Notification of first match
+//                kr = IOServiceAddMatchingNotification(gNotifyPort,
+//                                                      kIOFirstMatchNotification, matchingDict,
+//                                                      BulkTestDeviceAdded, NULL, &gBulkTestAddedIter);
+//                //Iterate over set of matching devices to access already-present devices
+//                //and to arm the notification
+//                BulkTestDeviceAdded(NULL, gBulkTestAddedIter);
+//
+//                //Notification of termination
+//                kr = IOServiceAddMatchingNotification(gNotifyPort,
+//                                                      kIOTerminatedNotification, matchingDict,
+//                                                      BulkTestDeviceRemoved, NULL, &gBulkTestRemovedIter);
+//                //Iterate over set of matching devices to release each one and to
+//                //arm the notification. NOTE: this function is not shown in this document.
+//                BulkTestDeviceRemoved(NULL, gBulkTestRemovedIter);
+//
+//                //Finished with master port
+//                mach_port_deallocate(mach_task_self(), masterPort);
+//                masterPort = 0;
+                
+                //Start the run loop so notifications will be received
+                CFRunLoopRun();
+                
+                //Because the run loop will run forever until interrupted,
+                //the program should never reach this point
+                return 0;
+            }
+                   
+                   
 
